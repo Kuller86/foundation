@@ -41,6 +41,7 @@ class UsersController extends AbstractCrudController
                 return $this->container->get('modera_backend_security.data_mapper.user_data_mapper');
             },
             'security' => array(
+                'role' => ModeraBackendSecurityBundle::ROLE_ACCESS_BACKEND_TOOLS_SECURITY_SECTION,
                 'actions' => array(
                     'create' => ModeraBackendSecurityBundle::ROLE_MANAGE_USER_PROFILES,
                     'update' => function (AuthorizationCheckerInterface $ac, array $params) use ($self) {
@@ -86,6 +87,7 @@ class UsersController extends AbstractCrudController
                         return $ac->isGranted(ModeraBackendSecurityBundle::ROLE_MANAGE_USER_PROFILES);
                     },
                     'list' => ModeraBackendSecurityBundle::ROLE_ACCESS_BACKEND_TOOLS_SECURITY_SECTION,
+                    'batchUpdate' => ModeraBackendSecurityBundle::ROLE_MANAGE_USER_PROFILES,
                 ),
             ),
             'hydration' => array(
