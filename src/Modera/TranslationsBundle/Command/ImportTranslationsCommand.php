@@ -16,6 +16,7 @@ use Modera\TranslationsBundle\Entity\TranslationToken;
 use Modera\TranslationsBundle\Entity\LanguageTranslationToken;
 use Modera\TranslationsBundle\Service\TranslationHandlersChain;
 use Modera\TranslationsBundle\Handling\TranslationHandlerInterface;
+use Symfony\Component\Stopwatch\Stopwatch;
 
 /**
  * From files to database.
@@ -41,6 +42,8 @@ class ImportTranslationsCommand extends ContainerAwareCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
+        $stopwatch = new Stopwatch();
+        $stopwatch->start('import', 'Import translation');
         $printMessageNames = $output->getVerbosity() >= OutputInterface::VERBOSITY_VERBOSE;
 
         /* @var TranslationHandlersChain $translationHandlersChain */
@@ -62,6 +65,7 @@ class ImportTranslationsCommand extends ContainerAwareCommand
             return;
         }
 
+        $translationArr = [];
         foreach ($handlers as $handler) {
             /* @var TranslationHandlerInterface $handler */
 
@@ -137,10 +141,17 @@ class ImportTranslationsCommand extends ContainerAwareCommand
                                     'translation' => $translation,
                                 ));
                                 if (!$languageTranslationToken) {
-                                    $languageTranslationToken = $token->createLanguageToken($language);
+                                    $hashKey = hash('sha256', $token->getId() . '_' . $language->getId() . '_' . $translation);
+
+                                    $translationArr[$hashKey] = [
+                                        'translationTokenId' => $token->getId(),
+                                        'languageId' => $language->getId(),
+                                        'translation' => $translation,
+                                    ];
                                 }
 
-                                if ($languageTranslationToken->isNew()) {
+                                if ($languageTranslationToken instanceof LanguageTranslationToken
+                                    && $languageTranslationToken->isNew()) {
                                     $languageTranslationToken->setTranslation($translation);
                                 }
 
@@ -169,11 +180,37 @@ class ImportTranslationsCommand extends ContainerAwareCommand
             }
         }
 
+        $persistCount = 0;
+        $flushCount = 20;
+        $output->writeln(sprintf('<info>Count translation: %s</info>', count($translationArr)));
+        $stopwatch->start('save_trans', 'Save translation');
+        foreach ($translationArr as $item) {
+            $languageTranslationToken = new LanguageTranslationToken();
+            $languageTranslationToken->setLanguage($this->em()->getReference(Language::class, $item['languageId']));
+            $languageTranslationToken->setTranslationToken($this->em()->getReference(TranslationToken::class, $item['translationTokenId']));
+            $languageTranslationToken->setTranslation($item['translation']);
+
+            $this->em()->persist($languageTranslationToken);
+            $persistCount++;
+
+            if ($persistCount >= $flushCount) {
+                $this->em()->flush();
+                $this->em()->clear();
+                $persistCount = 0;
+            }
+        }
+        $this->em()->flush();
+        $saveTransEvent = $stopwatch->stop('save_trans');
+
         if ($imported) {
             $output->writeln('>>> Translations have been successfully imported');
         } else {
             $output->writeln('>>> Nothing to import');
         }
+
+        $stopwatchEvent = $stopwatch->stop('import');
+        $output->writeln('>>>' . $saveTransEvent);
+        $output->writeln('>>>' . $stopwatchEvent);
     }
 
     private function printMessages(OutputInterface $output, $messages)
